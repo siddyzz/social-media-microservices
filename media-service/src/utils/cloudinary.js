@@ -28,12 +28,25 @@ export const uploadMediaToCloudinary = (file) => {
 };
 
 export const deleteMediaFromCloudinary = async (publicId) => {
+  if (!publicId) {
+    throw new Error("Cloudinary publicId is required for deletion");
+  }
+
   try {
-    const result = await cloudinary.uploader.destroy(publicId);
-    logInfo("Media deleted successfuly from cloud stroage", publicId);
-    return result;
+    const result = await cloudinary.uploader.destroy(publicId, {
+      resource_type: "auto",
+      invalidate: true,
+    });
+
+    logInfo("Cloudinary delete result", { publicId, result });
+
+    if (result.result === "ok" || result.result === "not found") {
+      return result;
+    }
+
+    throw new Error(`Cloudinary delete failed: ${JSON.stringify(result)}`);
   } catch (err) {
-    logError("Error deleting media from cludinary", err);
+    logError("Error deleting media from cludinary", { publicId, err });
     throw err;
   }
 };
