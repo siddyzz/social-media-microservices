@@ -73,23 +73,17 @@ app.use((req, res, next) => {
   info(`Request Body: ${JSON.stringify(req.body)}`);
   next();
 });
+
+//Proxy options use for all the services to avoid code duplication and maintain consistency in error handling and path resolution
 const proxyOptions = {
   proxyReqPathResolver: (req) => {
     return req.originalUrl.replace(/^\/v1/, "/api");
   },
-  proxyErrorHandler: (req, res, err) => {
-    const errorMessage =
-      err?.message || err?.toString() || JSON.stringify(err) || "Unknown error";
-    const errorDetails = {
-      message: errorMessage,
-      url: req.originalUrl,
-      method: req.method,
-      timestamp: new Date().toISOString(),
-    };
-    error(`Proxy error: ${errorMessage}`, errorDetails);
-    res.status(502).json({
-      message: "Service temporarily unavailable",
-      details: errorMessage,
+  proxyErrorHandler: (err, res, next) => {
+    error(`Proxy error: ${err.message}`);
+    res.status(500).json({
+      message: `Internal server error`,
+      error: err.message,
     });
   },
 };
@@ -167,9 +161,7 @@ app.use(
       return proxyReqOpts;
     },
     userResDecorator: (proxyRes, proxyResData, userReq, userRes) => {
-      logger.info(
-        `Response received from Search service: ${proxyRes.statusCode}`,
-      );
+      info(`Response received from Search service: ${proxyRes.statusCode}`);
 
       return proxyResData;
     },

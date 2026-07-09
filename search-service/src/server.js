@@ -28,8 +28,46 @@ app.use((req, res, next) => {
   info(`Request Body: ${JSON.stringify(req.body)}`);
   next();
 });
-//error handler
-app.use("/api/search", SearchRouter);
+
+const rateLimiter = new RateLimiterRedis({
+  storeClient: redisClient,
+  keyPrefix: "middleware",
+  points: 10, // Number of points
+  duration: 60, // Per second(s)
+});
+app.use((req, res, next) => {
+  rateLimiter
+    .consume(req.ip)
+    .then(() => next())
+    .catch(() => {
+      warn(`Rate limit exceeded for IP :${req.ip}`);
+      res.status(429).json({ message: "Too many requests" });
+    });
+});
+const sensitiveEndpointsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 50,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    warn(`Sensitive endpoint rate limit exceeded for IP :${req.ip}`);
+    res
+      .status(429)
+      .json({ message: "Too many requests to sensitive endpoint" });
+  },
+  store: new redisStore({
+    sendCommand: (...args) => redisClient.call(...args),
+  }), // we need to do this for the store to work with ioredis
+});
+
+app.use(
+  "/api/search",
+  (req, res, next) => {
+    req.redisClient = redisClient;
+    next();
+  },
+  SearchRouter,
+);
 
 app.use(errorHandler);
 async function startServer() {
