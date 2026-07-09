@@ -15,6 +15,7 @@ const PORT = process.env.PORT || 3001;
 const IDENTITY_SERVICE_URL = process.env.IDENTITY_SERVICE_URL;
 const POST_SERVICE_URL = process.env.POST_SERVICE_URL;
 const MEDIA_SERVICE_URL = process.env.MEDIA_SERVICE_URL;
+const SEARCH_SERVICE_URL = process.env.SEARCH_SERVICE_URL;
 const REDIS_URL = process.env.REDIS_URL;
 
 if (!IDENTITY_SERVICE_URL) {
@@ -30,6 +31,11 @@ if (!POST_SERVICE_URL) {
 if (!MEDIA_SERVICE_URL) {
   throw new Error(
     "MEDIA_SERVICE_URL must be set in environment variables or .env file",
+  );
+}
+if (!SEARCH_SERVICE_URL) {
+  throw new Error(
+    "SEARCH_SERVICE_URL must be set in environment variables or .env file",
   );
 }
 
@@ -72,8 +78,19 @@ const proxyOptions = {
     return req.originalUrl.replace(/^\/v1/, "/api");
   },
   proxyErrorHandler: (req, res, err) => {
-    error(`Error occurred while proxying request: ${err.message}`);
-    res.status(500).json({ message: "Error occurred while proxying request" });
+    const errorMessage =
+      err?.message || err?.toString() || JSON.stringify(err) || "Unknown error";
+    const errorDetails = {
+      message: errorMessage,
+      url: req.originalUrl,
+      method: req.method,
+      timestamp: new Date().toISOString(),
+    };
+    error(`Proxy error: ${errorMessage}`, errorDetails);
+    res.status(502).json({
+      message: "Service temporarily unavailable",
+      details: errorMessage,
+    });
   },
 };
 
@@ -137,11 +154,33 @@ app.use(
     parseReqBody: false,
   }),
 );
+
+app.use(
+  "/v1/search",
+  validToken,
+  proxy(SEARCH_SERVICE_URL, {
+    ...proxyOptions,
+    proxyReqOptDecorator: (proxyReqOpts, srcReq) => {
+      proxyReqOpts.headers["Content-Type"] = "application/json";
+      proxyReqOpts.headers["x-user-id"] = srcReq.user.userId;
+
+      return proxyReqOpts;
+    },
+    userResDecorator: (proxyRes, proxyResData, userReq, userRes) => {
+      logger.info(
+        `Response received from Search service: ${proxyRes.statusCode}`,
+      );
+
+      return proxyResData;
+    },
+  }),
+);
 app.use(errorHandler);
 app.listen(PORT, () => {
   info(`API gateway is running on port ${PORT}`);
   info(`Identity service is configured for ${IDENTITY_SERVICE_URL}`);
   info(`Post service is configured for${POST_SERVICE_URL}`);
   info(`Media service is configured for${MEDIA_SERVICE_URL}`);
+  info(`Search service is configured for${SEARCH_SERVICE_URL}`);
   info(`Redis URL is configured for ${REDIS_URL}`);
 });

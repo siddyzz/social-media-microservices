@@ -22,6 +22,12 @@ const createPost = async (req, res) => {
     });
 
     await newCreatedPost.save();
+    await publishToRabbitMQ("post.created", {
+      postId: newCreatedPost._id.toString(),
+      userId: newCreatedPost.user.toString(),
+      content: newCreatedPost.content,
+      createdAt: newCreatedPost.createdAt,
+    });
     await invalidatePostCache(req, newCreatedPost._id.toString());
     info("Post created successfully", newCreatedPost);
     res.status(201).json({
@@ -97,7 +103,7 @@ const getPost = async (req, res) => {
 
 const deletePost = async (req, res) => {
   try {
-    const deleteId = req.params.id;
+    const deleteId = req.params.id; // delete id is the id of the post to be deleted
     const post = await Post.findOneAndDelete({
       user: req.user.userId,
       _id: deleteId,
@@ -117,7 +123,7 @@ const deletePost = async (req, res) => {
     await invalidatePostCache(req, deleteId);
     res.json({
       success: true,
-      message: "Message deleted succesfully ",
+      message: "Post deleted succesfully ",
     });
   } catch (err) {
     error("Error occurred while deleting post: " + err.message);
